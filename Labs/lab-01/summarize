@@ -8,7 +8,7 @@ from __future__ import division
 import cv2, sys, numpy
 
 # Configuration.
-MAXGREY = 64
+MAXGREY = 256
 
 #-------------------------------------------------------------------------------
 # Routines.
@@ -29,7 +29,7 @@ def statistics (im, indent="  "):
     text += "%sS.D.:    %.2f\n" % (indent, sd)
     return text
 
-def histogram (im, fn):
+def histogram (im, fn, channel):
     "Determine the histogram of an image -- simple version."
     global MAXGREY
 
@@ -50,12 +50,18 @@ def histogram (im, fn):
     min = im.min()
     max = im.max()
     # Work through the image, accumulating the histogram.
+    if channel == "blue":
+        c = 0
+    elif channel == "green":
+        c = 1
+    elif channel == "red":
+        c = 2
     for y in range (0, ny):
         for x in range (0, nx):
-            for c in range (0, nc):
-                v = int((MAXGREY-1) * ((int(im[y,x,c])-min)/(max-min)))
-                hist[v] += 1
+            v = int((MAXGREY-1) * ((int(im[y,x,c])-min)/(max-min)))
+            hist[v] += 1
 
+    fn = fn + "_" + channel + ".dat"
     # Output the histogram values to a file.
     with open (fn, "w") as f:
         for i in range (0, MAXGREY):
@@ -78,7 +84,9 @@ for fn in sys.argv[1:]:
     print (statistics (im))
 
     # Calculate and output the histogram data.
-    histogram (im, fn + ".dat")
+    histogram (im, fn, "blue")
+    histogram (im, fn, "green")
+    histogram (im, fn, "red")
 
 #-------------------------------------------------------------------------------
 # End of summarize.
