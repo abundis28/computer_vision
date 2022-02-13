@@ -3,11 +3,11 @@
 import sys, cv2, numpy
 
 # Set-up.
-thresholding = "vanilla"
-thresholding = "adaptive"
+# thresholding = "vanilla"
+# thresholding = "adaptive"
 thresholding = "otsu"
 
-contouring = "vanilla"
+# contouring = "vanilla"
 contouring = "tree"
 
 # Handle the command line.
@@ -24,7 +24,7 @@ blur = cv2.GaussianBlur (grey, (5, 5), 0)
 # Threshold the image.
 if thresholding == "adaptive":
     binary = cv2.adaptiveThreshold (blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                    cv2.THRESH_BINARY, 11, 2)
+                                    cv2.THRESH_BINARY, 51, 2)
 elif thresholding =="otsu":
     t, binary = cv2.threshold (blur, 0, 255, cv2.THRESH_BINARY
                                     + cv2.THRESH_OTSU)
