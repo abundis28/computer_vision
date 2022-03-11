@@ -3,12 +3,10 @@
 # functionality.
 
 import cv2, sys, numpy as np
-from matplotlib.pyplot import get
-
-from sympy import im
 
 #-------------------------------------------------------------------------------
-# Function declarations.
+
+########    FUNCTION DECLARATIONS   ########
 def blurImage(image):
     kernel = np.ones((5,5),np.float32)/25
     image = cv2.filter2D(image,-1,kernel)
@@ -38,20 +36,20 @@ def getImageChannel(image, channel):
     print("Shape after gray cvr: "+str(grey.shape))   
     return grey
 
-def removeNoise(image):
-    blur = cv2.GaussianBlur (image, (7, 7), 0)
-    kernel = np.ones ((15,15), np.uint8)
+def removeNoise(image, sizeGaussian, sizeDilate):
+    blur = cv2.GaussianBlur (image, (sizeGaussian, sizeGaussian), 0)
+    kernel = np.ones ((sizeDilate, sizeDilate), np.uint8)
     image = cv2.dilate (blur, kernel, iterations=1)
     return image
 
-def hsvFilter(image):
+def hsvFilter(image, hMax, sMax, vMax):
     # image_copy = getImageChannel(image, 'b')
     # t, binary = cv2.threshold (image_copy, 0, 255, cv2.THRESH_BINARY
     #                                 + cv2.THRESH_OTSU)
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     lower = np.array([0, 0, 0], np.uint8)
-    upper = np.array([179, 171, 226], np.uint8)
+    upper = np.array([hMax, sMax, vMax], np.uint8)
     binary = cv2.inRange(hsv, lower, upper)
 
     return binary
@@ -59,28 +57,54 @@ def hsvFilter(image):
 def getExternalContours(image, reduced_image):
     # Find internal and external contours.
     canny = cv2.Canny(reduced_image,100,150)
-    contours, hierarchy = cv2.findContours (canny, cv2.RETR_EXTERNAL,
+    contours, _ = cv2.findContours (canny, cv2.RETR_EXTERNAL,
                                         cv2.CHAIN_APPROX_SIMPLE)
 
     rectangle = cv2.minAreaRect(contours[0])
     box = cv2.boxPoints(rectangle)
     box = np.int0(box)
-    cv2.drawContours(image,[box],0,(0,0,255),2)
+    # cv2.drawContours(image,[box],0,(0,0,255),2)
     
-    return image, rectangle, box
+    return image, box
 
-def crop_rect(image, rectangle, box):
+def getInternalContours(image, thres_image):
+    canny = cv2.Canny(thres_image,100,150)
+    contours, hierarchy = cv2.findContours (canny, cv2.RETR_CCOMP,
+                                        cv2.CHAIN_APPROX_SIMPLE)
+
+    external = []
+    internal = []
+    for (i, c) in enumerate(hierarchy[0]):
+        if c[3] == -1:
+            external.append (i)
+            cv2.drawContours (image, contours, i, (0, 0, 255), 5)
+
+    # Find spot contours, drawing them as we process them.
+    for (i, c) in enumerate(hierarchy[0]):
+        if c[3] in external:
+            internal.append (i)
+            # cv2.drawContours (image, contours, i, (0, 255, 0), 5)
+
+    # cv2.drawContours (image_copy, contours, -1, (0, 255, 0), 5)
+    print(len(external), len(internal))
+    return image, external, internal
+
+def crop_rect(image, filtered_image):
+    _, box_points = getExternalContours(image, filtered_image)
+
+    # Taken from the entry: "Perspective Transformation" by 
+    # Kang & Atul in The AI Learner: 
+    # https://theailearner.com/tag/cv2-getperspectivetransform/
+
     # All points are in format [cols, rows]
-    pt_A = box[0]
-    pt_B = box[1]
-    pt_C = box[2]
-    pt_D = box[3]
+    pt_A = box_points[0]
+    pt_B = box_points[1]
+    pt_C = box_points[2]
+    pt_D = box_points[3]
 
-    # Here, I have used L2 norm. You can use L1 also.
     width_AD = np.sqrt(((pt_A[0] - pt_D[0]) ** 2) + ((pt_A[1] - pt_D[1]) ** 2))
     width_BC = np.sqrt(((pt_B[0] - pt_C[0]) ** 2) + ((pt_B[1] - pt_C[1]) ** 2))
     maxWidth = max(int(width_AD), int(width_BC))
-    
     
     height_AB = np.sqrt(((pt_A[0] - pt_B[0]) ** 2) + ((pt_A[1] - pt_B[1]) ** 2))
     height_CD = np.sqrt(((pt_C[0] - pt_D[0]) ** 2) + ((pt_C[1] - pt_D[1]) ** 2))
@@ -98,7 +122,20 @@ def crop_rect(image, rectangle, box):
 
     return out
 
-####     MAIN PROGRAM     ####
+def threshold(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    filtered = hsvFilter(image, 179, 120, 210)
+    reduced_image = removeNoise(filtered, 3, 3)
+
+    binary = cv2.adaptiveThreshold(reduced_image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+            cv2.THRESH_BINARY,11,2)
+
+    substracted = binary-reduced_image
+    # substracted = cv2.bitwise_not(substracted)
+    return substracted
+
+########     MAIN PROGRAM     ########
 if len (sys.argv) != 2:
     print ("Usage: %s <image-file>" % sys.argv[1], file=sys.stderr)
     exit (1)
@@ -106,14 +143,15 @@ print ("The filename to work on is %s." % sys.argv[1])
 
 image = cv2.imread (sys.argv[1])
 
-reduced_image = removeNoise(image)
+reduced_image = removeNoise(image, 9, 11)
 
-filtered_image = hsvFilter(reduced_image)
+filtered_image = hsvFilter(reduced_image, 179, 171, 226)
 
-contours_image, rect, box_points = getExternalContours(image, filtered_image)
-print(box_points)
-# cropped_img, rotated_image = crop_rect(image, rect)
-cropped_image = crop_rect(image, rect, box_points)
+cropped_image = crop_rect(image, filtered_image)
+
+thres_image  = threshold(cropped_image)
+
+contour_image, external_list, internal_list = getInternalContours(cropped_image, thres_image)
 
 xpos, ypos = getPositionRA(filtered_image)
 hdg = getDirectionRA(filtered_image)
@@ -124,20 +162,20 @@ print ("BEARING %.1f" % hdg)
 
 #-------------------------------------------------------------------------------
 
-cv2.namedWindow ("processed_image", cv2.WINDOW_NORMAL)
-ny, nx = filtered_image.shape
-cv2.resizeWindow ("processed_image", nx//2, ny//2)
-cv2.imshow ("processed_image", filtered_image)
+cv2.namedWindow ("thres_image", cv2.WINDOW_NORMAL)
+ny, nx = thres_image.shape
+cv2.resizeWindow ("thres_image", nx//2, ny//2)
+cv2.imshow ("thres_image", thres_image)
 cv2.waitKey (0)
 
-cv2.namedWindow ("contours_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = contours_image.shape
-cv2.resizeWindow ("contours_image", nx//2, ny//2)
-cv2.imshow ("contours_image", contours_image)
+cv2.namedWindow ("contour_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = contour_image.shape
+cv2.resizeWindow ("contour_image", nx//2, ny//2)
+cv2.imshow ("contour_image", contour_image)
 cv2.waitKey (0)
 
-cv2.namedWindow ("cropped_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = cropped_image.shape
-cv2.resizeWindow ("cropped_image", nx//2, ny//2)
-cv2.imshow ("cropped_image", cropped_image)
-cv2.waitKey (0)
+# cv2.namedWindow ("substracted", cv2.WINDOW_NORMAL)
+# ny, nx = substracted.shape
+# cv2.resizeWindow ("substracted", nx//2, ny//2)
+# cv2.imshow ("substracted", substracted)
+# cv2.waitKey (0)
