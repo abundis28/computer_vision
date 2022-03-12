@@ -7,7 +7,8 @@ import cv2, sys, numpy as np
 #-------------------------------------------------------------------------------
 
 ########    FUNCTION DECLARATIONS   ########
-def isGreenArrowCorrectPosition(image, cropped_image, contours, indexList):
+def isGreenArrowCorrectPosition(cropped_image, contours, indexList):
+    x_length, y_length, _ = cropped_image.shape
     for index in indexList:
         if cv2.contourArea(contours[index]) > 2000:
             moment = cv2.moments(contours[index])
@@ -15,9 +16,9 @@ def isGreenArrowCorrectPosition(image, cropped_image, contours, indexList):
             cy = int(moment['m01']/moment['m00'])
             b, g, r = cropped_image[cy,cx]
             if g > b + 20 and g > r + 20:
-                cv2.drawContours (cropped_image, contours, index, (0, 0, 255), 5)
-                return True, cropped_image
-    return False, cropped_image
+                if cx > x_length//2 and cy < y_length//2:
+                    return True
+    return False
 
 def getPositionRA(image):
     return 0.5, 0.5
@@ -154,7 +155,7 @@ thres_image  = threshold(cropped_image)
 
 contour_image, internal_contours, external_list, internal_list = getInternalContours(cropped_image, thres_image)
 
-boolFLag, cont_image = isGreenArrowCorrectPosition(image, cropped_image, internal_contours, external_list)
+boolFLag, cont_image = isGreenArrowCorrectPosition(cropped_image, internal_contours, external_list)
 
 xpos, ypos = getPositionRA(filtered_image)
 hdg = getDirectionRA(filtered_image)
