@@ -7,19 +7,28 @@ import cv2, sys, numpy as np
 #-------------------------------------------------------------------------------
 
 ########    FUNCTION DECLARATIONS   ########
-def blurImage(image):
-    kernel = np.ones((5,5),np.float32)/25
-    image = cv2.filter2D(image,-1,kernel)
-    return image
-
-def checkPositionGreenArrow(image):
-    return True
+def isGreenArrowCorrectPosition(image, cropped_image, contours, indexList):
+    for index in indexList:
+        if cv2.contourArea(contours[index]) > 2000:
+            moment = cv2.moments(contours[index])
+            cx = int(moment['m10']/moment['m00'])
+            cy = int(moment['m01']/moment['m00'])
+            b, g, r = cropped_image[cy,cx]
+            if g > b + 20 and g > r + 20:
+                cv2.drawContours (cropped_image, contours, index, (0, 0, 255), 5)
+                return True, cropped_image
+    return False, cropped_image
 
 def getPositionRA(image):
     return 0.5, 0.5
 
 def getDirectionRA(image):
     return 45
+
+def blurImage(image):
+    kernel = np.ones((5,5),np.float32)/25
+    image = cv2.filter2D(image,-1,kernel)
+    return image
 
 def getImageChannel(image, channel):
     temp = image.copy()
@@ -32,21 +41,16 @@ def getImageChannel(image, channel):
     elif channel == 'g':
         temp[:,:,0] = 0
         temp[:,:,2] = 0
-    grey = cv2.cvtColor (temp, cv2.COLOR_BGR2GRAY) 
-    print("Shape after gray cvr: "+str(grey.shape))   
+    grey = cv2.cvtColor (temp, cv2.COLOR_BGR2GRAY)
     return grey
 
 def removeNoise(image, sizeGaussian, sizeDilate):
-    blur = cv2.GaussianBlur (image, (sizeGaussian, sizeGaussian), 0)
-    kernel = np.ones ((sizeDilate, sizeDilate), np.uint8)
-    image = cv2.dilate (blur, kernel, iterations=1)
+    blur = cv2.GaussianBlur(image, (sizeGaussian, sizeGaussian), 0)
+    kernel = np.ones((sizeDilate, sizeDilate), np.uint8)
+    image = cv2.erode(blur, kernel, iterations=1)
     return image
 
 def hsvFilter(image, hMax, sMax, vMax):
-    # image_copy = getImageChannel(image, 'b')
-    # t, binary = cv2.threshold (image_copy, 0, 255, cv2.THRESH_BINARY
-    #                                 + cv2.THRESH_OTSU)
-
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     lower = np.array([0, 0, 0], np.uint8)
     upper = np.array([hMax, sMax, vMax], np.uint8)
@@ -63,13 +67,12 @@ def getExternalContours(image, reduced_image):
     rectangle = cv2.minAreaRect(contours[0])
     box = cv2.boxPoints(rectangle)
     box = np.int0(box)
-    # cv2.drawContours(image,[box],0,(0,0,255),2)
     
     return image, box
 
 def getInternalContours(image, thres_image):
-    canny = cv2.Canny(thres_image,100,150)
-    contours, hierarchy = cv2.findContours (canny, cv2.RETR_CCOMP,
+    # canny = cv2.Canny(thres_image,100,150)
+    contours, hierarchy = cv2.findContours (thres_image, cv2.RETR_CCOMP,
                                         cv2.CHAIN_APPROX_SIMPLE)
 
     external = []
@@ -77,7 +80,7 @@ def getInternalContours(image, thres_image):
     for (i, c) in enumerate(hierarchy[0]):
         if c[3] == -1:
             external.append (i)
-            cv2.drawContours (image, contours, i, (0, 0, 255), 5)
+            # cv2.drawContours (image, contours, i, (0, 0, 255), 5)
 
     # Find spot contours, drawing them as we process them.
     for (i, c) in enumerate(hierarchy[0]):
@@ -85,9 +88,8 @@ def getInternalContours(image, thres_image):
             internal.append (i)
             # cv2.drawContours (image, contours, i, (0, 255, 0), 5)
 
-    # cv2.drawContours (image_copy, contours, -1, (0, 255, 0), 5)
     print(len(external), len(internal))
-    return image, external, internal
+    return image, contours, external, internal
 
 def crop_rect(image, filtered_image):
     _, box_points = getExternalContours(image, filtered_image)
@@ -123,8 +125,6 @@ def crop_rect(image, filtered_image):
     return out
 
 def threshold(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
     filtered = hsvFilter(image, 179, 120, 210)
     reduced_image = removeNoise(filtered, 3, 3)
 
@@ -133,7 +133,8 @@ def threshold(image):
 
     substracted = binary-reduced_image
     # substracted = cv2.bitwise_not(substracted)
-    return substracted
+    substracted_reduced = removeNoise(substracted, 5, 5)
+    return substracted_reduced
 
 ########     MAIN PROGRAM     ########
 if len (sys.argv) != 2:
@@ -151,7 +152,9 @@ cropped_image = crop_rect(image, filtered_image)
 
 thres_image  = threshold(cropped_image)
 
-contour_image, external_list, internal_list = getInternalContours(cropped_image, thres_image)
+contour_image, internal_contours, external_list, internal_list = getInternalContours(cropped_image, thres_image)
+
+boolFLag, cont_image = isGreenArrowCorrectPosition(image, cropped_image, internal_contours, external_list)
 
 xpos, ypos = getPositionRA(filtered_image)
 hdg = getDirectionRA(filtered_image)
@@ -169,9 +172,9 @@ cv2.imshow ("thres_image", thres_image)
 cv2.waitKey (0)
 
 cv2.namedWindow ("contour_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = contour_image.shape
+ny, nx, nz = cont_image.shape
 cv2.resizeWindow ("contour_image", nx//2, ny//2)
-cv2.imshow ("contour_image", contour_image)
+cv2.imshow ("contour_image", cont_image)
 cv2.waitKey (0)
 
 # cv2.namedWindow ("substracted", cv2.WINDOW_NORMAL)
