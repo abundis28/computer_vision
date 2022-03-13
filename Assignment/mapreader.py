@@ -109,18 +109,24 @@ def threshold(image):
     substracted_reduced = removeNoise(substracted, 5, 5)
     return substracted_reduced
 
-def getGreenArrowCentroid(image, contours, indexList):
+def getCentroid(image, contours, indexList, color):
     for index in indexList:
         if cv2.contourArea(contours[index]) > 2000:
-            # Taken from OpenCV Contour Features tutorial:
+            # Adapted from OpenCV Contour Features tutorial:
             # https://docs.opencv.org/3.4/dd/d49/tutorial_py_contour_features.html
             moment = cv2.moments(contours[index])
             cx = int(moment['m10']/moment['m00'])
             cy = int(moment['m01']/moment['m00'])
             b, g, r = image[cy,cx]
-            if g > b + 20 and g > r + 20:
-                break
-    return cy, cx
+            if color == 'g':
+                if g > b + 20 and g > r + 20:
+                    break
+            if color == 'r':
+                if r > b + 20 and r > g + 20:
+                    # cv2.drawContours(image, contours, index, (0, 0, 255), 5)
+                    # print(cx, cy)
+                    break
+    return cy, cx, index
 
 def correctOrientation(image, y_centroid, x_centroid):
     height, width, _ = image.shape
@@ -131,11 +137,18 @@ def correctOrientation(image, y_centroid, x_centroid):
         corrected = image
     return corrected
 
-def getPositionRA(image):
-    return 0.5, 0.5
+def getDirectionRA(image, contour):
+    _ ,cols = image.shape[:2]
+    vx, vy, x, y = cv2.fitLine(contour, cv2.DIST_L2,0,0.01,0.01)
+    lefty = int((-x*vy/vx) + y)
+    righty = int(((cols-x)*vy/vx)+y)
+    image = cv2.line(image,(cols-1,righty),(0,lefty),(0,255,0),2)
 
-def getDirectionRA(image):
-    return 45
+    x_axis = np.array([1, 0])    # unit vector in the same direction as the x axis
+    your_line = np.array([vx, vy])  # unit vector in the same direction as your line
+    dot_product = np.dot(x_axis, your_line)
+    angle_2_x = np.arccos(dot_product)
+    return angle_2_x, image
 
 ########     MAIN PROGRAM     ########
 if len (sys.argv) != 2:
@@ -147,23 +160,20 @@ original_image = cv2.imread (sys.argv[1])
 image = original_image.copy()
 
 reduced_image = removeNoise(image, 9, 11)
-
 filtered_image = hsvFilter(reduced_image, 179, 171, 226)
-
 crop_image = crop_rect(image, filtered_image)
 
 thres_image  = threshold(crop_image)
-
 internal_contours, external_list, internal_list = getInternalContours(thres_image)
-
-x_centroid, y_centroid = getGreenArrowCentroid(crop_image, internal_contours, external_list)
-
+x_centroid, y_centroid, _ = getCentroid(crop_image, internal_contours, external_list, 'g')
 correct_image = correctOrientation(crop_image, y_centroid, x_centroid)
 
-
-
-xpos, ypos = getPositionRA(correct_image)
-hdg = getDirectionRA(correct_image)
+thres_image  = threshold(correct_image)
+internal_contours, external_list, internal_list = getInternalContours(thres_image)
+xpos, ypos, index_red_contour = getCentroid(correct_image, internal_contours, external_list, 'r')
+red_pointer_approx = cv2.minEnclosingTriangle(internal_contours[index_red_contour])
+red_image = cv2.polylines(correct_image, np.int32([red_pointer_approx[1]]), True, (0,0,255), 5)
+hdg, line_image = getDirectionRA(correct_image, internal_contours[index_red_contour])
 
 # Output the position and bearing in the form required by the test harness.
 print ("POSITION %.3f %.3f" % (xpos, ypos))
@@ -177,14 +187,14 @@ cv2.resizeWindow ("original_image", nx//2, ny//2)
 cv2.imshow ("original_image", original_image)
 cv2.waitKey (0)
 
-cv2.namedWindow ("crop_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = crop_image.shape
-cv2.resizeWindow ("crop_image", nx//2, ny//2)
-cv2.imshow ("crop_image", crop_image)
+cv2.namedWindow ("red_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = red_image.shape
+cv2.resizeWindow ("red_image", nx//2, ny//2)
+cv2.imshow ("red_image", red_image)
 cv2.waitKey (0)
 
-cv2.namedWindow ("correct_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = correct_image.shape
-cv2.resizeWindow ("correct_image", nx//2, ny//2)
-cv2.imshow ("correct_image", correct_image)
+cv2.namedWindow ("line_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = line_image.shape
+cv2.resizeWindow ("line_image", nx//2, ny//2)
+cv2.imshow ("line_image", red_image)
 cv2.waitKey (0)
