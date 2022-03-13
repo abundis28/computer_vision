@@ -11,6 +11,8 @@ def isGreenArrowCorrectPosition(cropped_image, contours, indexList):
     x_length, y_length, _ = cropped_image.shape
     for index in indexList:
         if cv2.contourArea(contours[index]) > 2000:
+            # Taken from OpenCV Contour Features tutorial:
+            # https://docs.opencv.org/3.4/dd/d49/tutorial_py_contour_features.html
             moment = cv2.moments(contours[index])
             cx = int(moment['m10']/moment['m00'])
             cy = int(moment['m01']/moment['m00'])
@@ -64,7 +66,6 @@ def getExternalContours(image, reduced_image):
     canny = cv2.Canny(reduced_image,100,150)
     contours, _ = cv2.findContours (canny, cv2.RETR_EXTERNAL,
                                         cv2.CHAIN_APPROX_SIMPLE)
-
     rectangle = cv2.minAreaRect(contours[0])
     box = cv2.boxPoints(rectangle)
     box = np.int0(box)
@@ -72,24 +73,19 @@ def getExternalContours(image, reduced_image):
     return image, box
 
 def getInternalContours(image, thres_image):
-    # canny = cv2.Canny(thres_image,100,150)
-    contours, hierarchy = cv2.findContours (thres_image, cv2.RETR_CCOMP,
+    # Adapted from the starter code from experiment 3 of CE866 designed by
+    # Dr. Adrian Clark.
+    contours, hierarchy = cv2.findContours(thres_image, cv2.RETR_CCOMP,
                                         cv2.CHAIN_APPROX_SIMPLE)
-
     external = []
     internal = []
     for (i, c) in enumerate(hierarchy[0]):
         if c[3] == -1:
             external.append (i)
-            # cv2.drawContours (image, contours, i, (0, 0, 255), 5)
-
-    # Find spot contours, drawing them as we process them.
     for (i, c) in enumerate(hierarchy[0]):
         if c[3] in external:
             internal.append (i)
-            # cv2.drawContours (image, contours, i, (0, 255, 0), 5)
 
-    print(len(external), len(internal))
     return image, contours, external, internal
 
 def crop_rect(image, filtered_image):
@@ -99,7 +95,6 @@ def crop_rect(image, filtered_image):
     # Kang & Atul in The AI Learner: 
     # https://theailearner.com/tag/cv2-getperspectivetransform/
 
-    # All points are in format [cols, rows]
     pt_A = box_points[0]
     pt_B = box_points[1]
     pt_C = box_points[2]
@@ -107,8 +102,7 @@ def crop_rect(image, filtered_image):
 
     width_AD = np.sqrt(((pt_A[0] - pt_D[0]) ** 2) + ((pt_A[1] - pt_D[1]) ** 2))
     width_BC = np.sqrt(((pt_B[0] - pt_C[0]) ** 2) + ((pt_B[1] - pt_C[1]) ** 2))
-    maxWidth = max(int(width_AD), int(width_BC))
-    
+    maxWidth = max(int(width_AD), int(width_BC)) 
     height_AB = np.sqrt(((pt_A[0] - pt_B[0]) ** 2) + ((pt_A[1] - pt_B[1]) ** 2))
     height_CD = np.sqrt(((pt_C[0] - pt_D[0]) ** 2) + ((pt_C[1] - pt_D[1]) ** 2))
     maxHeight = max(int(height_AB), int(height_CD))
@@ -118,8 +112,6 @@ def crop_rect(image, filtered_image):
                             [0, maxHeight - 1],
                             [maxWidth - 1, maxHeight - 1],
                             [maxWidth - 1, 0]])
-	
-    # Compute the perspective transform M
     M = cv2.getPerspectiveTransform(input_pts,output_pts)
     out = cv2.warpPerspective(image,M,(maxWidth, maxHeight),flags=cv2.INTER_LINEAR)
 
@@ -128,7 +120,6 @@ def crop_rect(image, filtered_image):
 def threshold(image):
     filtered = hsvFilter(image, 179, 120, 210)
     reduced_image = removeNoise(filtered, 3, 3)
-
     binary = cv2.adaptiveThreshold(reduced_image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
             cv2.THRESH_BINARY,11,2)
 
