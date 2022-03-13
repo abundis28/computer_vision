@@ -7,26 +7,6 @@ import cv2, sys, numpy as np
 #-------------------------------------------------------------------------------
 
 ########    FUNCTION DECLARATIONS   ########
-def isGreenArrowCorrectPosition(cropped_image, contours, indexList):
-    x_length, y_length, _ = cropped_image.shape
-    for index in indexList:
-        if cv2.contourArea(contours[index]) > 2000:
-            # Taken from OpenCV Contour Features tutorial:
-            # https://docs.opencv.org/3.4/dd/d49/tutorial_py_contour_features.html
-            moment = cv2.moments(contours[index])
-            cx = int(moment['m10']/moment['m00'])
-            cy = int(moment['m01']/moment['m00'])
-            b, g, r = cropped_image[cy,cx]
-            if g > b + 20 and g > r + 20:
-                if cx > x_length//2 and cy < y_length//2:
-                    return True
-    return False
-
-def getPositionRA(image):
-    return 0.5, 0.5
-
-def getDirectionRA(image):
-    return 45
 
 def blurImage(image):
     kernel = np.ones((5,5),np.float32)/25
@@ -72,7 +52,7 @@ def getExternalContours(image, reduced_image):
     
     return image, box
 
-def getInternalContours(image, thres_image):
+def getInternalContours(thres_image):
     # Adapted from the starter code from experiment 3 of CE866 designed by
     # Dr. Adrian Clark.
     contours, hierarchy = cv2.findContours(thres_image, cv2.RETR_CCOMP,
@@ -86,12 +66,12 @@ def getInternalContours(image, thres_image):
         if c[3] in external:
             internal.append (i)
 
-    return image, contours, external, internal
+    return contours, external, internal
 
 def crop_rect(image, filtered_image):
     _, box_points = getExternalContours(image, filtered_image)
 
-    # Taken from the entry: "Perspective Transformation" by 
+    # Adapted from the entry: "Perspective Transformation" by 
     # Kang & Atul in The AI Learner: 
     # https://theailearner.com/tag/cv2-getperspectivetransform/
 
@@ -102,7 +82,8 @@ def crop_rect(image, filtered_image):
 
     width_AD = np.sqrt(((pt_A[0] - pt_D[0]) ** 2) + ((pt_A[1] - pt_D[1]) ** 2))
     width_BC = np.sqrt(((pt_B[0] - pt_C[0]) ** 2) + ((pt_B[1] - pt_C[1]) ** 2))
-    maxWidth = max(int(width_AD), int(width_BC)) 
+    maxWidth = max(int(width_AD), int(width_BC))
+
     height_AB = np.sqrt(((pt_A[0] - pt_B[0]) ** 2) + ((pt_A[1] - pt_B[1]) ** 2))
     height_CD = np.sqrt(((pt_C[0] - pt_D[0]) ** 2) + ((pt_C[1] - pt_D[1]) ** 2))
     maxHeight = max(int(height_AB), int(height_CD))
@@ -113,9 +94,9 @@ def crop_rect(image, filtered_image):
                             [maxWidth - 1, maxHeight - 1],
                             [maxWidth - 1, 0]])
     M = cv2.getPerspectiveTransform(input_pts,output_pts)
-    out = cv2.warpPerspective(image,M,(maxWidth, maxHeight),flags=cv2.INTER_LINEAR)
-
-    return out
+    cropped_image = cv2.warpPerspective(image,M,(maxWidth, maxHeight),flags=cv2.INTER_LINEAR)
+    
+    return cv2.flip(cropped_image, 0)
 
 def threshold(image):
     filtered = hsvFilter(image, 179, 120, 210)
@@ -128,28 +109,61 @@ def threshold(image):
     substracted_reduced = removeNoise(substracted, 5, 5)
     return substracted_reduced
 
+def getGreenArrowCentroid(image, contours, indexList):
+    for index in indexList:
+        if cv2.contourArea(contours[index]) > 2000:
+            # Taken from OpenCV Contour Features tutorial:
+            # https://docs.opencv.org/3.4/dd/d49/tutorial_py_contour_features.html
+            moment = cv2.moments(contours[index])
+            cx = int(moment['m10']/moment['m00'])
+            cy = int(moment['m01']/moment['m00'])
+            b, g, r = image[cy,cx]
+            if g > b + 20 and g > r + 20:
+                break
+    return cy, cx
+
+def correctOrientation(image, y_centroid, x_centroid):
+    height, width, _ = image.shape
+    h_limit, w_limit = height//2, width//2
+    if x_centroid > h_limit and y_centroid < w_limit:
+        corrected = cv2.flip(image, -1)
+    else:
+        corrected = image
+    return corrected
+
+def getPositionRA(image):
+    return 0.5, 0.5
+
+def getDirectionRA(image):
+    return 45
+
 ########     MAIN PROGRAM     ########
 if len (sys.argv) != 2:
     print ("Usage: %s <image-file>" % sys.argv[1], file=sys.stderr)
     exit (1)
 print ("The filename to work on is %s." % sys.argv[1])
 
-image = cv2.imread (sys.argv[1])
+original_image = cv2.imread (sys.argv[1])
+image = original_image.copy()
 
 reduced_image = removeNoise(image, 9, 11)
 
 filtered_image = hsvFilter(reduced_image, 179, 171, 226)
 
-cropped_image = crop_rect(image, filtered_image)
+crop_image = crop_rect(image, filtered_image)
 
-thres_image  = threshold(cropped_image)
+thres_image  = threshold(crop_image)
 
-contour_image, internal_contours, external_list, internal_list = getInternalContours(cropped_image, thres_image)
+internal_contours, external_list, internal_list = getInternalContours(thres_image)
 
-boolFLag, cont_image = isGreenArrowCorrectPosition(cropped_image, internal_contours, external_list)
+x_centroid, y_centroid = getGreenArrowCentroid(crop_image, internal_contours, external_list)
 
-xpos, ypos = getPositionRA(filtered_image)
-hdg = getDirectionRA(filtered_image)
+correct_image = correctOrientation(crop_image, y_centroid, x_centroid)
+
+
+
+xpos, ypos = getPositionRA(correct_image)
+hdg = getDirectionRA(correct_image)
 
 # Output the position and bearing in the form required by the test harness.
 print ("POSITION %.3f %.3f" % (xpos, ypos))
@@ -157,20 +171,20 @@ print ("BEARING %.1f" % hdg)
 
 #-------------------------------------------------------------------------------
 
-cv2.namedWindow ("thres_image", cv2.WINDOW_NORMAL)
-ny, nx = thres_image.shape
-cv2.resizeWindow ("thres_image", nx//2, ny//2)
-cv2.imshow ("thres_image", thres_image)
+cv2.namedWindow ("original_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = original_image.shape
+cv2.resizeWindow ("original_image", nx//2, ny//2)
+cv2.imshow ("original_image", original_image)
 cv2.waitKey (0)
 
-cv2.namedWindow ("contour_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = cont_image.shape
-cv2.resizeWindow ("contour_image", nx//2, ny//2)
-cv2.imshow ("contour_image", cont_image)
+cv2.namedWindow ("crop_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = crop_image.shape
+cv2.resizeWindow ("crop_image", nx//2, ny//2)
+cv2.imshow ("crop_image", crop_image)
 cv2.waitKey (0)
 
-# cv2.namedWindow ("substracted", cv2.WINDOW_NORMAL)
-# ny, nx = substracted.shape
-# cv2.resizeWindow ("substracted", nx//2, ny//2)
-# cv2.imshow ("substracted", substracted)
-# cv2.waitKey (0)
+cv2.namedWindow ("correct_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = correct_image.shape
+cv2.resizeWindow ("correct_image", nx//2, ny//2)
+cv2.imshow ("correct_image", correct_image)
+cv2.waitKey (0)
