@@ -2,7 +2,7 @@
 # This is template for your program, for you to expand with all the correct 
 # functionality.
 
-import cv2, sys, numpy as np
+import cv2, sys, math, numpy as np
 
 #-------------------------------------------------------------------------------
 
@@ -137,18 +137,34 @@ def correctOrientation(image, y_centroid, x_centroid):
         corrected = image
     return corrected
 
-def getDirectionRA(image, contour):
-    _ ,cols = image.shape[:2]
-    vx, vy, x, y = cv2.fitLine(contour, cv2.DIST_L2,0,0.01,0.01)
-    lefty = int((-x*vy/vx) + y)
-    righty = int(((cols-x)*vy/vx)+y)
-    image = cv2.line(image,(cols-1,righty),(0,lefty),(0,255,0),2)
+def getCorner(triangleCorners):
+    #red_pointer_approx[1][0][0][0]), np.int32(red_pointer_approx[1][0][0][1]
+    ...
 
-    x_axis = np.array([1, 0])    # unit vector in the same direction as the x axis
-    your_line = np.array([vx, vy])  # unit vector in the same direction as your line
-    dot_product = np.dot(x_axis, your_line)
-    angle_2_x = np.arccos(dot_product)
-    return angle_2_x, image
+def getPositionRA(image, internal_contours, external_list):
+    x_pixels, y_pixels, index_red_contour = getCentroid(image, internal_contours, external_list, 'r')
+    red_pointer_approx = cv2.minEnclosingTriangle(internal_contours[index_red_contour])
+    coord_corner = (np.int32(getCorner(red_pointer_approx[1][0])))
+    image = cv2.polylines(image, np.int32([red_pointer_approx[1]]), True, (0,0,255), 5)
+    image = cv2.circle(image, (y_pixels,x_pixels), 8, (0,255,0), -1)
+    image = cv2.circle(image, coord_corner, 8, (0,255,0), -1)
+    xpos = 1.0 - ((x_pixels * 1.0)/image.shape[0])
+    ypos = ((y_pixels * 1.0)/image.shape[1])
+    return [xpos, ypos], [x_pixels, y_pixels], coord_corner, image
+
+def getDirectionRA(image, coord_center, coord_corner):
+    print(coord_center, coord_corner)
+    y = coord_corner[1] - coord_center[0]
+    x = coord_corner[0] - coord_center[1]
+    print(y, x)
+    deg = math.degrees(math.atan2(y, x))
+    if x < 0 and y >= 0:
+        deg += 2*(180-deg)
+    # elif x
+    print(deg)
+    return 0, image
+    # rad = math.atan2(coord_center[0]-coord_corner[0], coord_center[1]-coord_corner[1])
+
 
 ########     MAIN PROGRAM     ########
 if len (sys.argv) != 2:
@@ -170,13 +186,11 @@ correct_image = correctOrientation(crop_image, y_centroid, x_centroid)
 
 thres_image  = threshold(correct_image)
 internal_contours, external_list, internal_list = getInternalContours(thres_image)
-xpos, ypos, index_red_contour = getCentroid(correct_image, internal_contours, external_list, 'r')
-red_pointer_approx = cv2.minEnclosingTriangle(internal_contours[index_red_contour])
-red_image = cv2.polylines(correct_image, np.int32([red_pointer_approx[1]]), True, (0,0,255), 5)
-hdg, line_image = getDirectionRA(correct_image, internal_contours[index_red_contour])
+coord_trans, coord_norm, coord_corner, red_image = getPositionRA(correct_image, internal_contours, external_list)
+hdg, line_image = getDirectionRA(correct_image, coord_norm, coord_corner)
 
 # Output the position and bearing in the form required by the test harness.
-print ("POSITION %.3f %.3f" % (xpos, ypos))
+print ("POSITION %.3f %.3f" % (coord_trans[0], coord_trans[1]))
 print ("BEARING %.1f" % hdg)
 
 #-------------------------------------------------------------------------------
@@ -191,10 +205,4 @@ cv2.namedWindow ("red_image", cv2.WINDOW_NORMAL)
 ny, nx, nz = red_image.shape
 cv2.resizeWindow ("red_image", nx//2, ny//2)
 cv2.imshow ("red_image", red_image)
-cv2.waitKey (0)
-
-cv2.namedWindow ("line_image", cv2.WINDOW_NORMAL)
-ny, nx, nz = line_image.shape
-cv2.resizeWindow ("line_image", nx//2, ny//2)
-cv2.imshow ("line_image", red_image)
 cv2.waitKey (0)
