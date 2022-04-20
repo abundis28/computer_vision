@@ -8,25 +8,6 @@ import cv2, sys, math, numpy as np
 
 ########    FUNCTION DECLARATIONS   ########
 
-def blurImage(image):
-    kernel = np.ones((5,5),np.float32)/25
-    image = cv2.filter2D(image,-1,kernel)
-    return image
-
-def getImageChannel(image, channel):
-    temp = image.copy()
-    if channel == 'r':
-        temp[:,:,0] = 0
-        temp[:,:,1] = 0
-    elif channel == 'b':
-        temp[:,:,2] = 0
-        temp[:,:,1] = 0
-    elif channel == 'g':
-        temp[:,:,0] = 0
-        temp[:,:,2] = 0
-    grey = cv2.cvtColor (temp, cv2.COLOR_BGR2GRAY)
-    return grey
-
 def removeNoise(image, sizeGaussian, sizeDilate):
     blur = cv2.GaussianBlur(image, (sizeGaussian, sizeGaussian), 0)
     kernel = np.ones((sizeDilate, sizeDilate), np.uint8)
@@ -38,7 +19,6 @@ def hsvFilter(image, hMax, sMax, vMax):
     lower = np.array([0, 0, 0], np.uint8)
     upper = np.array([hMax, sMax, vMax], np.uint8)
     binary = cv2.inRange(hsv, lower, upper)
-
     return binary
 
 def getExternalContours(image, reduced_image):
@@ -49,7 +29,6 @@ def getExternalContours(image, reduced_image):
     rectangle = cv2.minAreaRect(contours[0])
     box = cv2.boxPoints(rectangle)
     box = np.int0(box)
-    
     return image, box
 
 def getInternalContours(thres_image):
@@ -98,15 +77,15 @@ def crop_rect(image, filtered_image):
     
     return cv2.flip(cropped_image, 0)
 
-def threshold(image):
+def threshold(image, sizeGaussian1, sizeDilate1, sizeGaussian2, sizeDilate2):
     filtered = hsvFilter(image, 179, 120, 210)
-    reduced_image = removeNoise(filtered, 3, 3)
+    reduced_image = removeNoise(filtered, sizeGaussian1, sizeDilate1)
     binary = cv2.adaptiveThreshold(reduced_image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
             cv2.THRESH_BINARY,11,2)
 
     substracted = binary-reduced_image
     # substracted = cv2.bitwise_not(substracted)
-    substracted_reduced = removeNoise(substracted, 5, 5)
+    substracted_reduced = removeNoise(substracted, sizeGaussian2, sizeDilate2)
     return substracted_reduced
 
 def getCentroid(image, contours, indexList, color):
@@ -137,40 +116,52 @@ def correctOrientation(image, y_centroid, x_centroid):
         corrected = image
     return corrected
 
-def getCorner(triangleCorners):
-    #red_pointer_approx[1][0][0][0]), np.int32(red_pointer_approx[1][0][0][1]
-    ...
+def getRepeatedCoordinate(coord_1_1, coord_1_2, coord_2_1, coord_2_2):
+    if coord_1_1.all() == coord_2_1.all() or coord_1_1.all() == coord_2_2.all():
+        return coord_1_1
+    elif coord_1_2.all() == coord_2_1.all() or coord_1_2.all() == coord_2_2.all():
+        return coord_1_2
+
+def getTopCorner(t_corners):
+    print(t_corners)
+    dist1 = math.dist(t_corners[0][0], t_corners[1][0])
+    dist2 = math.dist(t_corners[1][0], t_corners[2][0])
+    dist3 = math.dist(t_corners[0][0], t_corners[2][0])
+    if dist1 > dist3 and dist2 > dist3:
+        print(1)
+        repeated = getRepeatedCoordinate(t_corners[0][0], t_corners[1][0], t_corners[1][0], t_corners[2][0])
+    if dist2 > dist1 and dist3 > dist1:
+        print(2)
+        repeated = getRepeatedCoordinate(t_corners[1][0], t_corners[2][0], t_corners[0][0], t_corners[2][0])
+    if dist1 > dist2 and dist3 > dist2:
+        print(3)
+        repeated = getRepeatedCoordinate(t_corners[0][0], t_corners[1][0], t_corners[0][0], t_corners[2][0])
+    print(repeated)
+    return repeated
 
 def getPositionRA(image, internal_contours, external_list):
     x_pixels, y_pixels, index_red_contour = getCentroid(image, internal_contours, external_list, 'r')
     red_pointer_approx = cv2.minEnclosingTriangle(internal_contours[index_red_contour])
-    coord_corner = (np.int32(getCorner(red_pointer_approx[1][0])))
-    image = cv2.polylines(image, np.int32([red_pointer_approx[1]]), True, (0,0,255), 5)
-    image = cv2.circle(image, (y_pixels,x_pixels), 8, (0,255,0), -1)
-    image = cv2.circle(image, coord_corner, 8, (0,255,0), -1)
+    #print(x_pixels, y_pixels)
+    #print(red_pointer_approx)
+    coord_corner = np.int32(getTopCorner(red_pointer_approx[1]))
+    image = cv2.polylines(image, np.int32([red_pointer_approx[1]]), True, (0,0,255), 4)
+    image = cv2.circle(image, (y_pixels,x_pixels), 9, (0,255,0), -1)
+    # image = cv2.circle(image, coord_corner, 8, (0,255,0), -1)
     xpos = 1.0 - ((x_pixels * 1.0)/image.shape[0])
     ypos = ((y_pixels * 1.0)/image.shape[1])
-    return [xpos, ypos], [x_pixels, y_pixels], coord_corner, image
-
-def getDirectionRA(image, coord_center, coord_corner):
-    print(coord_center, coord_corner)
-    y = coord_corner[1] - coord_center[0]
-    x = coord_corner[0] - coord_center[1]
-    print(y, x)
-    deg = math.degrees(math.atan2(y, x))
-    if x < 0 and y >= 0:
-        deg += 2*(180-deg)
-    # elif x
-    print(deg)
-    return 0, image
-    # rad = math.atan2(coord_center[0]-coord_corner[0], coord_center[1]-coord_corner[1])
-
-
+    return [xpos, ypos], [x_pixels, y_pixels], coord_corner, image, internal_contours, index_red_contour
+    
+def getDirectionRA(correct_image, c_center, c_corner):
+    line_image = cv2.line(correct_image, (c_center[1], 0), (c_center[1], c_center[0]), (0, 0, 0), thickness=3)
+    line_image = cv2.line(line_image, (c_center[1], c_center[0]), (c_corner[0], c_corner[1]), (0, 0, 0), thickness=3)
+    return _, line_image
+    
+    
 ########     MAIN PROGRAM     ########
 if len (sys.argv) != 2:
     print ("Usage: %s <image-file>" % sys.argv[1], file=sys.stderr)
     exit (1)
-print ("The filename to work on is %s." % sys.argv[1])
 
 original_image = cv2.imread (sys.argv[1])
 image = original_image.copy()
@@ -179,19 +170,19 @@ reduced_image = removeNoise(image, 9, 11)
 filtered_image = hsvFilter(reduced_image, 179, 171, 226)
 crop_image = crop_rect(image, filtered_image)
 
-thres_image  = threshold(crop_image)
-internal_contours, external_list, internal_list = getInternalContours(thres_image)
+thres_image1  = threshold(crop_image, 3, 3, 5, 5)
+internal_contours, external_list, internal_list = getInternalContours(thres_image1)
 x_centroid, y_centroid, _ = getCentroid(crop_image, internal_contours, external_list, 'g')
 correct_image = correctOrientation(crop_image, y_centroid, x_centroid)
 
-thres_image  = threshold(correct_image)
-internal_contours, external_list, internal_list = getInternalContours(thres_image)
-coord_trans, coord_norm, coord_corner, red_image = getPositionRA(correct_image, internal_contours, external_list)
-hdg, line_image = getDirectionRA(correct_image, coord_norm, coord_corner)
+thres_image2  = threshold(correct_image, 3, 1, 5, 9)
+internal_contours, external_list, internal_list = getInternalContours(thres_image2)
+coord_trans, coord_center, coord_corner, red_image, cnts, index_red = getPositionRA(correct_image, internal_contours, external_list)
+hdg, line_image = getDirectionRA(correct_image, coord_center, coord_corner)
 
 # Output the position and bearing in the form required by the test harness.
 print ("POSITION %.3f %.3f" % (coord_trans[0], coord_trans[1]))
-print ("BEARING %.1f" % hdg)
+print ("BEARING %.1f" % 0)
 
 #-------------------------------------------------------------------------------
 
@@ -204,5 +195,12 @@ cv2.waitKey (0)
 cv2.namedWindow ("red_image", cv2.WINDOW_NORMAL)
 ny, nx, nz = red_image.shape
 cv2.resizeWindow ("red_image", nx//2, ny//2)
-cv2.imshow ("red_image", red_image)
+cv2.imshow ("red_image", correct_image)
 cv2.waitKey (0)
+
+cv2.namedWindow ("line_image", cv2.WINDOW_NORMAL)
+ny, nx, nz = line_image.shape
+cv2.resizeWindow ("line_image", nx//2, ny//2)
+cv2.imshow ("line_image", line_image)
+cv2.waitKey (0)
+
