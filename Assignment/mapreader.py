@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# This is template for your program, for you to expand with all the correct 
-# functionality.
+
+# Name: Andres Abundis Correa
+# Reg Number: aa2100995
 
 import cv2, sys, math, numpy as np
 
@@ -86,7 +87,8 @@ def crop_rect(image, filtered_image):
                             [maxWidth - 1, maxHeight - 1],
                             [maxWidth - 1, 0]])
     M = cv2.getPerspectiveTransform(input_pts,output_pts)
-    cropped_image = cv2.warpPerspective(image,M,(maxWidth, maxHeight),flags=cv2.INTER_LINEAR)
+    cropped_image = cv2.warpPerspective(image,M,(maxWidth, maxHeight),
+                    flags=cv2.INTER_LINEAR)
     
     return cv2.flip(cropped_image, 0)
 
@@ -132,8 +134,7 @@ def correctOrientation(image, x_centroid, y_centroid):
     # Get half limits of the image to divide it into quadrants.
     height, width, _ = image.shape
     h_limit, w_limit = height//2, width//2
-    # Check that the passed centroid coordinates fall in the 
-    # top left quadrant.
+    # Check that the passed centroid coordinates fall in the top left quadrant.
     if y_centroid > h_limit and x_centroid < w_limit:
         corrected = cv2.flip(image, -1)
     else:
@@ -157,16 +158,20 @@ def getTopCorner(t_corners):
     dist3 = math.dist(t_corners[0][0], t_corners[2][0])
     # Check which two sides are the largest and return their common vertex.
     if dist1 > dist3 and dist2 > dist3:
-        return getRepeatedCoordinate(t_corners[0][0], t_corners[1][0], t_corners[1][0], t_corners[2][0])
+        return getRepeatedCoordinate(t_corners[0][0], t_corners[1][0], 
+                                    t_corners[1][0], t_corners[2][0])
     if dist2 > dist1 and dist3 > dist1:
-        return getRepeatedCoordinate(t_corners[1][0], t_corners[2][0], t_corners[0][0], t_corners[2][0])
+        return getRepeatedCoordinate(t_corners[1][0], t_corners[2][0],
+                                    t_corners[0][0], t_corners[2][0])
     if dist1 > dist2 and dist3 > dist2:
-        return getRepeatedCoordinate(t_corners[0][0], t_corners[1][0], t_corners[0][0], t_corners[2][0])
+        return getRepeatedCoordinate(t_corners[0][0], t_corners[1][0],
+                                    t_corners[0][0], t_corners[2][0])
 
 def getPositionRA(image, internal_contours, external_list):
     # The function gets the position of the pointer of the red arrow.
     # Get the centroid of the red arrow.
-    x_pixels, y_pixels, index_red_contour = getCentroid(image, internal_contours, external_list, 'r')
+    x_pixels, y_pixels, index_red_contour = getCentroid(image, internal_contours, 
+                                                        external_list, 'r')
     # Obtain the min enclosing triangle.
     red_pointer_approx = cv2.minEnclosingTriangle(internal_contours[index_red_contour])
     # Find the top corner of the iscoceles triangle.
@@ -177,6 +182,8 @@ def getPositionRA(image, internal_contours, external_list):
     return [xpos, ypos], [x_pixels, y_pixels], coord_corner, internal_contours, index_red_contour
     
 def getDirectionRA(correct_image, c_center, c_corner):
+    # Get angle in radians between vertical northern line and direction of the
+    # red arrow pointer.
     angle = np.rad2deg(math.atan2((c_center[0]-c_corner[0]), (c_center[1]-c_corner[1])))
     if angle < 0:
         angle *= -1
@@ -189,22 +196,31 @@ def getDirectionRA(correct_image, c_center, c_corner):
 if len (sys.argv) != 2:
     print ("Usage: %s <image-file>" % sys.argv[1], file=sys.stderr)
     exit (1)
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
 original_image = cv2.imread (sys.argv[1])
 image = original_image.copy()
 
+# Prepare the image and threshold through HSV to crop the blue background out.
 reduced_image = removeNoise(image, 9, 11)
 filtered_image = hsvFilter(reduced_image, 179, 171, 226)
 crop_image = crop_rect(image, filtered_image)
 
+# Threshold and get contours of red and green arrow inside the map.
 thres_image1  = threshold(crop_image, 3, 3, 5, 5)
 internal_contours, external_list, internal_list = getInternalContours(thres_image1)
+# Get centroid of the green arrow and rotate 180 degrees if the arrow is not in
+# the top right quadrant.
 x_centroid, y_centroid, _ = getCentroid(crop_image, internal_contours, external_list, 'g')
 correct_image = correctOrientation(crop_image, x_centroid, y_centroid)
 
+# Threshold and get contours of the internal elements of the map (green and red arrow.)
 thres_image2  = threshold(correct_image, 3, 1, 5, 9)
 internal_contours, external_list, internal_list = getInternalContours(thres_image2)
-coord_trans, coord_center, coord_corner, cnts, index_red = getPositionRA(correct_image, internal_contours, external_list)
+# Get position of of red arrow.
+coord_trans, coord_center, coord_corner, cnts, index_red = getPositionRA(   correct_image, 
+                                                                            internal_contours,
+                                                                            external_list)
+# Get direction of the pointer of the red arrow.
 hdg = getDirectionRA(correct_image, coord_center, coord_corner)
 
 # Output the position and bearing in the form required by the test harness.
