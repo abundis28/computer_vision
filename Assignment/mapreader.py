@@ -3,6 +3,15 @@
 # Name: Andres Abundis Correa
 # Reg Number: aa2100995
 
+# Program name: mapreader.py
+# Purpose:  These program will take images of a museum-provided map
+#           that is placed on top of a blue background. The program
+#           will then indicate the position (scaled to a previously
+#           determined grid) of the pointer of a red arrow that is
+#           present on all maps and the direction that it is pointing
+#           towards in degrees (from the north direction and in a 
+#           clockwise direction).
+
 import cv2, sys, math, numpy as np
 
 #-------------------------------------------------------------------------------
@@ -12,27 +21,35 @@ import cv2, sys, math, numpy as np
 def removeNoise(image, sizeGaussian, sizeDilate):
     # Utility function that is used in several other functions to
     # reduce noise to facilitate thresholding.
+
     blur = cv2.GaussianBlur(image, (sizeGaussian, sizeGaussian), 0)
     kernel = np.ones((sizeDilate, sizeDilate), np.uint8)
-    image = cv2.erode(blur, kernel, iterations=1)
-    return image
+    eroded_image = cv2.erode(blur, kernel, iterations=1)
+
+    return eroded_image
 
 def hsvFilter(image, hMax, sMax, vMax):
     # Segment different parts of an image depending on the hue,
     # saturation and value parameters that are passed.
+
+    # Change image to the HSV colorspace.
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    # Define range of hue, saturation and value to filter according to.
     lower = np.array([0, 0, 0], np.uint8)
     upper = np.array([hMax, sMax, vMax], np.uint8)
+    # Filter
     binary = cv2.inRange(hsv, lower, upper)
+
     return binary
 
 def getExternalContours(image, reduced_image):
 
     # Adapted from the article "Edges and Contours Basics with OpenCV" by
     # Thiago Carvalho in Towards Data Science:
-    # https://towardsdatascience.com/edges-and-contours-basics-with-opencv-66d3263fd6d1
+    # https://bit.ly/towards-datascience-edges-and-contours
 
     # Find internal and external contours.
+    # The canny method of cv2 was used to improve the contours.
     canny = cv2.Canny(reduced_image,100,150)
     contours, _ = cv2.findContours (canny, cv2.RETR_EXTERNAL,
                                         cv2.CHAIN_APPROX_SIMPLE)
@@ -41,6 +58,7 @@ def getExternalContours(image, reduced_image):
     # Get four corners of min bounding box.
     box = cv2.boxPoints(rectangle)
     box = np.int0(box)
+
     return image, box
 
 def getInternalContours(thres_image):
@@ -48,8 +66,10 @@ def getInternalContours(thres_image):
     # Adapted from the starter code from experiment 3 of CE866 designed by
     # Dr. Adrian Clark.
 
+    # Find internal and external contours.
     contours, hierarchy = cv2.findContours(thres_image, cv2.RETR_CCOMP,
                                         cv2.CHAIN_APPROX_SIMPLE)
+    # Separate the indexes of external and internal contours.
     external = []
     internal = []
     for (i, c) in enumerate(hierarchy[0]):
@@ -64,28 +84,31 @@ def getInternalContours(thres_image):
 def crop_rect(image, filtered_image):
     _, box_points = getExternalContours(image, filtered_image)
 
-    # Adapted from the entry: "Perspective Transformation" by 
+    # Taken from the entry: "Perspective Transformation" by 
     # Kang & Atul in The AI Learner: 
     # https://theailearner.com/tag/cv2-getperspectivetransform/
 
+    # Define the four corners of the map.
     pt_A = box_points[0]
     pt_B = box_points[1]
     pt_C = box_points[2]
     pt_D = box_points[3]
 
+    # Calculate the lengths of the sides of the images.
     width_AD = np.sqrt(((pt_A[0] - pt_D[0]) ** 2) + ((pt_A[1] - pt_D[1]) ** 2))
     width_BC = np.sqrt(((pt_B[0] - pt_C[0]) ** 2) + ((pt_B[1] - pt_C[1]) ** 2))
     maxWidth = max(int(width_AD), int(width_BC))
-
     height_AB = np.sqrt(((pt_A[0] - pt_B[0]) ** 2) + ((pt_A[1] - pt_B[1]) ** 2))
     height_CD = np.sqrt(((pt_C[0] - pt_D[0]) ** 2) + ((pt_C[1] - pt_D[1]) ** 2))
     maxHeight = max(int(height_AB), int(height_CD))
 
+    # Prepare input and output parameters for the transformation.
     input_pts = np.float32([pt_A, pt_B, pt_C, pt_D])
     output_pts = np.float32([[0, 0],
                             [0, maxHeight - 1],
                             [maxWidth - 1, maxHeight - 1],
                             [maxWidth - 1, 0]])
+    # Crop the image to the map.
     M = cv2.getPerspectiveTransform(input_pts,output_pts)
     cropped_image = cv2.warpPerspective(image,M,(maxWidth, maxHeight),
                     flags=cv2.INTER_LINEAR)
@@ -102,8 +125,11 @@ def threshold(image, sizeGaussian1, sizeDilate1, sizeGaussian2, sizeDilate2):
     filtered = hsvFilter(image, 179, 120, 210)
     # Reduce noise
     reduced_image = removeNoise(filtered, sizeGaussian1, sizeDilate1) 
-    binary = cv2.adaptiveThreshold(reduced_image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-            cv2.THRESH_BINARY,11,2)
+    binary = cv2.adaptiveThreshold( 
+                                    reduced_image,255,
+                                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+                                    cv2.THRESH_BINARY,11,2
+                                  )
     # Substract the binary obtained by the adaptive thresholding so that only
     # desired values remain.
     substracted = binary-reduced_image
@@ -113,9 +139,9 @@ def threshold(image, sizeGaussian1, sizeDilate1, sizeGaussian2, sizeDilate2):
 
 def getCentroid(image, contours, indexList, color):
     for index in indexList:
+        # Adapted from OpenCV Contour Features tutorial:
+        # https://docs.opencv.org/3.4/dd/d49/tutorial_py_contour_features.html
         if cv2.contourArea(contours[index]) > 2000:
-            # Adapted from OpenCV Contour Features tutorial:
-            # https://docs.opencv.org/3.4/dd/d49/tutorial_py_contour_features.html
             moment = cv2.moments(contours[index])
             cx = int(moment['m10']/moment['m00'])
             cy = int(moment['m01']/moment['m00'])
@@ -158,33 +184,43 @@ def getTopCorner(t_corners):
     dist3 = math.dist(t_corners[0][0], t_corners[2][0])
     # Check which two sides are the largest and return their common vertex.
     if dist1 > dist3 and dist2 > dist3:
-        return getRepeatedCoordinate(t_corners[0][0], t_corners[1][0], 
-                                    t_corners[1][0], t_corners[2][0])
+        return getRepeatedCoordinate(   t_corners[0][0], t_corners[1][0], 
+                                        t_corners[1][0], t_corners[2][0]
+                                    )
     if dist2 > dist1 and dist3 > dist1:
-        return getRepeatedCoordinate(t_corners[1][0], t_corners[2][0],
-                                    t_corners[0][0], t_corners[2][0])
+        return getRepeatedCoordinate(   t_corners[1][0], t_corners[2][0],
+                                        t_corners[0][0], t_corners[2][0]
+                                    )
     if dist1 > dist2 and dist3 > dist2:
-        return getRepeatedCoordinate(t_corners[0][0], t_corners[1][0],
-                                    t_corners[0][0], t_corners[2][0])
+        return getRepeatedCoordinate(   t_corners[0][0], t_corners[1][0],
+                                        t_corners[0][0], t_corners[2][0]
+                                    )
 
 def getPositionRA(image, internal_contours, external_list):
     # The function gets the position of the pointer of the red arrow.
     # Get the centroid of the red arrow.
-    x_pixels, y_pixels, index_red_contour = getCentroid(image, internal_contours, 
-                                                        external_list, 'r')
+    x_pixels, y_pixels, i_red_contour = getCentroid(image, 
+                                                    internal_contours, 
+                                                    external_list, 'r'
+                                                   )
     # Obtain the min enclosing triangle.
-    red_pointer_approx = cv2.minEnclosingTriangle(internal_contours[index_red_contour])
+    red_pointer_approx = cv2.minEnclosingTriangle(
+                                        internal_contours[i_red_contour]
+                                    )
     # Find the top corner of the iscoceles triangle.
     coord_corner = np.int32(getTopCorner(red_pointer_approx[1]))
     # Scale pointer coordinates.
     xpos = 1.0 - ((coord_corner[1] * 1.0)/image.shape[0])
     ypos = ((coord_corner[0] * 1.0)/image.shape[1])
-    return [xpos, ypos], [x_pixels, y_pixels], coord_corner, internal_contours, index_red_contour
+    scaled_coord = [xpos, ypos]
+    coord = [x_pixels, y_pixels]
+    return scaled_coord, coord, coord_corner, i_red_contour
     
 def getDirectionRA(correct_image, c_center, c_corner):
     # Get angle in radians between vertical northern line and direction of the
     # red arrow pointer.
-    angle = np.rad2deg(math.atan2((c_center[0]-c_corner[0]), (c_center[1]-c_corner[1])))
+    angle = math.atan2((c_center[0]-c_corner[0]), (c_center[1]-c_corner[1]))
+    angle = np.rad2deg(angle)
     if angle < 0:
         angle *= -1
     else:
@@ -207,19 +243,20 @@ crop_image = crop_rect(image, filtered_image)
 
 # Threshold and get contours of red and green arrow inside the map.
 thres_image1  = threshold(crop_image, 3, 3, 5, 5)
-internal_contours, external_list, internal_list = getInternalContours(thres_image1)
+i_contours, e_list, _ = getInternalContours(thres_image1)
 # Get centroid of the green arrow and rotate 180 degrees if the arrow is not in
 # the top right quadrant.
-x_centroid, y_centroid, _ = getCentroid(crop_image, internal_contours, external_list, 'g')
+x_centroid, y_centroid, _ = getCentroid(crop_image, i_contours, e_list, 'g')
 correct_image = correctOrientation(crop_image, x_centroid, y_centroid)
 
-# Threshold and get contours of the internal elements of the map (green and red arrow.)
+# Threshold and get contours of the green and red arrows.
 thres_image2  = threshold(correct_image, 3, 1, 5, 9)
-internal_contours, external_list, internal_list = getInternalContours(thres_image2)
+i_contours, e_list, _ = getInternalContours(thres_image2)
 # Get position of of red arrow.
-coord_trans, coord_center, coord_corner, cnts, index_red = getPositionRA(   correct_image, 
-                                                                            internal_contours,
-                                                                            external_list)
+coord_trans, coord_center, coord_corner, _ = getPositionRA( correct_image, 
+                                                            i_contours,
+                                                            e_list
+                                                          )
 # Get direction of the pointer of the red arrow.
 hdg = getDirectionRA(correct_image, coord_center, coord_corner)
 
